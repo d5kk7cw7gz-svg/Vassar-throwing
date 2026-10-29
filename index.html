@@ -2,51 +2,39 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#101316">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Throwing Check-In</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-:root { color-scheme: light; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+:root { color-scheme: dark; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 body { margin: 0; }
 img { max-width: 100%; }
 [hidden] { display: none !important; }
 /* Layout: one narrow column for the check-in form; the coach view widens into a sortable log.
    Direction: a scoreboard-style condensed display face over plain, legible form controls, with one baseball-seam stitch line as the only ornament. */
 :root {
-  --bg: #eceff2;
-  --surface: #ffffff;
-  --surface-2: #f3f5f7;
-  --ink: #171b20;
-  --muted: #56606b;
-  --line: #d3d9df;
-  --plate: transparent;
-  --accent: #8a1c2e;
-  --accent-ink: #ffffff;
-  --accent-soft: #f3e3e6;
-  --ok: #1f7a4d;
-  --ok-bg: #dcf0e5;
-  --warn: #7d5200;
-  --warn-bg: #f8ebc8;
-  --crit: #a3212f;
-  --crit-bg: #f8dde0;
-  --neutral-bg: #e3e7eb;
+  --bg: #101316;
+  --surface: #181c20;
+  --surface-2: #1f2429;
+  --ink: #e9ecef;
+  --muted: #9aa4ae;
+  --line: #2b3238;
+  --plate: #ffffff;
+  --accent: #e5707f;
+  --accent-ink: #1a0c0f;
+  --accent-soft: #2c1a1e;
+  --ok: #6fd2a0;
+  --ok-bg: #183326;
+  --warn: #e8bd5c;
+  --warn-bg: #35290e;
+  --crit: #f08a95;
+  --crit-bg: #3a1a1f;
+  --neutral-bg: #252b31;
   --display: 'Barlow Condensed', 'Arial Narrow', 'Helvetica Neue', sans-serif;
   --body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #101316; --surface: #181c20; --surface-2: #1f2429; --ink: #e9ecef; --muted: #9aa4ae; --line: #2b3238;
-    --accent: #e5707f; --accent-ink: #1a0c0f; --accent-soft: #2c1a1e;
-    --ok: #6fd2a0; --ok-bg: #183326; --warn: #e8bd5c; --warn-bg: #35290e; --crit: #f08a95; --crit-bg: #3a1a1f; --neutral-bg: #252b31; --plate: #ffffff;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #101316; --surface: #181c20; --surface-2: #1f2429; --ink: #e9ecef; --muted: #9aa4ae; --line: #2b3238;
-  --accent: #e5707f; --accent-ink: #1a0c0f; --accent-soft: #2c1a1e;
-  --ok: #6fd2a0; --ok-bg: #183326; --warn: #e8bd5c; --warn-bg: #35290e; --crit: #f08a95; --crit-bg: #3a1a1f; --neutral-bg: #252b31; --plate: #ffffff;
-  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
