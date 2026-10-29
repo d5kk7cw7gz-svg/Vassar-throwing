@@ -262,9 +262,9 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
           <textarea id="f-throw" name="throwing" maxlength="600" placeholder="Distances, number of throws, drills"></textarea>
         </div>
         <fieldset class="field" id="fs-armor">
-          <legend>Did you do Armored Head Pre and Post Throw? <span class="req">*</span></legend>
+          <legend>Did you do Armored Heat Pre and Post Throw? <span class="req">*</span></legend>
           <div class="chips" id="chips-armor"></div>
-          <input type="text" class="other" id="o-armor" maxlength="80" placeholder="Tell us more" hidden aria-label="Other, armored head pre and post throw">
+          <input type="text" class="other" id="o-armor" maxlength="80" placeholder="Tell us more" hidden aria-label="Other, armored heat pre and post throw">
         </fieldset>
         <fieldset class="field" id="fs-feel">
           <legend>How does your arm feel after today? <span class="req">*</span></legend>
@@ -316,22 +316,11 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
   <section id="view-coach" class="panel wide" hidden>
     <div id="coachLock" class="lockbox" hidden>
       <h2 class="section-title">Coach view</h2>
-      <p class="meta-line">Coach sign-in.</p>
-      <form id="lockForm" novalidate>
-        <div class="field narrow">
-          <label for="coachEmail">Email</label>
-          <input type="email" id="coachEmail" autocomplete="username">
-        </div>
-        <div class="field narrow">
-          <label for="coachPw">Password</label>
-          <input type="password" id="coachPw" autocomplete="current-password">
-        </div>
-        <p class="formerr" id="lockErr" role="alert" hidden>That email or password is not right.</p>
-        <div class="actions">
-          <button type="submit" class="btn">Unlock</button>
-          <button type="button" class="btn ghost" id="coachGoogle">Sign in with Google</button>
-        </div>
-      </form>
+      <p class="meta-line">Coaches sign in with their Vassar Google account.</p>
+      <p class="formerr" id="lockErr" role="alert" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn" id="coachGoogle">Sign in with Google</button>
+      </div>
     </div>
     <div id="coachBody" hidden>
       <div class="tally" id="tally"></div>
@@ -344,7 +333,7 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 (function () {
@@ -409,8 +398,10 @@ import { firebaseConfig } from "./firebase-config.js";
     if (c === 'auth/unauthorized-domain') return 'Sign-in is not set up for this web address yet. Tell your coach.';
     return 'Could not sign in. Check your connection and try again.';
   }
-  async function googleSignIn() {
-    var res = await signInWithPopup(state.auth, new GoogleAuthProvider());
+  async function googleSignIn(pickAccount) {
+    var provider = new GoogleAuthProvider();
+    if (pickAccount) provider.setCustomParameters({ prompt: 'select_account' });
+    var res = await signInWithPopup(state.auth, provider);
     return res.user;
   }
   function renderAuthBars() {
@@ -476,7 +467,7 @@ import { firebaseConfig } from "./firebase-config.js";
     need('your name', name, $('#f-name'));
     need('date of throwing', date, $('#f-date'));
     need('what you threw', $('#f-throw').value.trim(), $('#f-throw'));
-    need('Armored Head', picked('armor'), firstOf('armor'));
+    need('Armored Heat', picked('armor'), firstOf('armor'));
     need('how your arm feels', picked('feel'), firstOf('feel'));
     need('red, yellow, or green day', picked('dayColor'), firstOf('dayColor'));
     need('goal of catch play', $('#f-goal').value.trim(), $('#f-goal'));
@@ -553,7 +544,7 @@ import { firebaseConfig } from "./firebase-config.js";
   function entryCard(e, o) {
     o = o || {};
     return '<article class="entry' + (o.plain ? ' plain' : '') + '"><div class="head"><span class="when">' + esc(fmtDate(e.date, true)) + (o.showName ? ' &middot; ' + esc(e.name) : '') + '</span>' + feelPill(e.feel) + '</div><dl>' +
-      row('Throwing', e.throwing) + row('Armored Head', e.armor) + row('Red / yellow / green', e.dayColor) + row('Goal / day', e.goal) + row('Executed well', e.well) + row('Running', e.run) + row('Submitted', fmtAt(e.at)) +
+      row('Throwing', e.throwing) + row('Armored Heat', e.armor) + row('Red / yellow / green', e.dayColor) + row('Goal / day', e.goal) + row('Executed well', e.well) + row('Running', e.run) + row('Submitted', fmtAt(e.at)) +
       '</dl>' + (o.del ? '<div class="entry-actions">' + delCell(e) + '</div>' : '') + '</article>';
   }
   state.coach = { view: 'roster', player: null, entry: null };
@@ -702,32 +693,24 @@ import { firebaseConfig } from "./firebase-config.js";
   /* ---------- coach view ---------- */
   function toTop() { try { document.scrollingElement.scrollTop = 0; } catch (e) {} }
   state.coachOk = false;
-  $('#lockForm').addEventListener('submit', async function (ev) {
-    ev.preventDefault();
-    var err = $('#lockErr');
-    if (!state.auth) { err.textContent = 'The log is not connected yet.'; err.hidden = false; return; }
-    try {
-      var cred = await signInWithEmailAndPassword(state.auth, $('#coachEmail').value.trim(), $('#coachPw').value);
-      $('#coachPw').value = ''; err.hidden = true;
-      if (!isCoach(cred.user)) { await signOut(state.auth); err.textContent = 'That account is not on the coach list.'; err.hidden = false; }
-    } catch (e) {
-      err.textContent = 'That email or password is not right.'; err.hidden = false; $('#coachPw').select();
-    }
-  });
   $('#coachGoogle').addEventListener('click', async function () {
     var err = $('#lockErr');
     if (!state.auth) { err.textContent = 'The log is not connected yet.'; err.hidden = false; return; }
     try {
-      var u = await googleSignIn();
+      var u = await googleSignIn(true);
       if (isCoach(u)) err.hidden = true;
       else { err.textContent = 'That Google account (' + (u.email || 'unknown') + ') is not on the coach list.'; err.hidden = false; }
-    } catch (e) { err.textContent = signInMsg(e); err.hidden = false; }
+    } catch (e) {
+      var c = e && e.code;
+      err.textContent = (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') ? 'Sign-in was cancelled.' : signInMsg(e);
+      err.hidden = false;
+    }
   });
   function panelHtml(p) {
     var n = p.entries.length, id = esc(p.id), head = '<div class="rp-panel" id="rp-panel-' + id + '">';
     if (!n) return head + '<p class="meta-line">No responses yet.</p></div>';
     return head +
-      '<div class="rp-top"><button type="button" class="linklike first" data-player="' + id + '">All responses (' + n + ')</button><button type="button" class="btn-sm" data-export-player="' + id + '">Export CSV</button></div>' +
+      '<div class="rp-top"><button type="button" class="linklike first" data-player="' + id + '">All responses (' + n + ')</button><button type="button" class="btn-sm" data-export-player="' + id + '">Export data</button></div>' +
       '<p class="sub-label">Most recent response</p>' + entryCard(p.entries[0], { showName: !!p.other, plain: true }) +
       '<p class="sub-label">Responses by date</p><ul>' +
       p.entries.map(function (e) {
@@ -763,7 +746,7 @@ import { firebaseConfig } from "./firebase-config.js";
       return;
     }
     if (c.view === 'player') {
-      el.innerHTML = '<div class="backbar actions"><button type="button" class="btn ghost" data-back="1">&larr; All players</button><button type="button" class="btn ghost" data-export-player="' + esc(pl.id) + '">Export CSV</button></div>' +
+      el.innerHTML = '<div class="backbar actions"><button type="button" class="btn ghost" data-back="1">&larr; All players</button><button type="button" class="btn ghost" data-export-player="' + esc(pl.id) + '">Export data</button></div>' +
         '<h2 class="section-title">' + esc(pl.name) + '</h2><p class="meta-line">' + pl.entries.length + ' response' + (pl.entries.length === 1 ? '' : 's') + ' in total, newest first.</p>' +
         (pl.entries.length ? chartHtml(pl) : '<div class="empty"><b>No responses yet</b>Check-ins from this player appear here.</div>');
       return;
@@ -771,7 +754,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
     renderTally();
 
-    el.innerHTML = '<div class="roster-head"><h2 class="section-title">Players</h2><div class="actions"><button type="button" class="btn ghost" data-export="1">Export all-time CSV</button><button type="button" class="btn ghost" data-export-day="1">Export daily CSV</button><button type="button" class="btn ghost" data-lock="1">Sign out</button></div></div>' + dayPanel() +
+    el.innerHTML = '<div class="roster-head"><h2 class="section-title">Players</h2><div class="actions"><button type="button" class="btn ghost" data-export="1">Export all-time data</button><button type="button" class="btn ghost" data-export-day="1">Export daily data</button><button type="button" class="btn ghost" data-lock="1">Sign out</button></div></div>' + dayPanel() +
       '<ul class="roster">' + items.map(function (p) {
         var n = p.entries.length, open = state.openPlayer === p.id;
         var meta = n ? n + ' response' + (n === 1 ? '' : 's') + ' &middot; last ' + esc(fmtDate(p.entries[0].date, true)) : 'No responses yet';
@@ -788,7 +771,7 @@ import { firebaseConfig } from "./firebase-config.js";
   async function doExport(only, label, fixedName) {
     var list = (only || allEntries()).slice().sort(function (a, b) { return norm(a.name).localeCompare(norm(b.name)) || newest(a, b); });
     if (!list.length) return showNotice('There are no check-ins to export.', false);
-    var head = ['Name', 'Date of throwing', 'Throwing', 'Armored Head pre/post', 'Arm feel', 'Red/yellow/green day', 'Goal and day of week', 'Executed well', 'Treadmill or running time', 'Submitted at'];
+    var head = ['Name', 'Date of throwing', 'Throwing', 'Armored Heat pre/post', 'Arm feel', 'Red/yellow/green day', 'Goal and day of week', 'Executed well', 'Treadmill or running time', 'Submitted at'];
     var rows = list.map(function (e) { return [e.name, e.date, e.throwing, e.armor, e.feel, e.dayColor, e.goal, e.well, e.run, e.at].map(csvCell).join(','); });
     var csv = head.map(csvCell).join(',') + '\n' + rows.join('\n');
     var fname = fixedName || 'throwing-checkins-' + (label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' : '') + todayStr() + '.csv';
