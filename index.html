@@ -192,6 +192,10 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
 .lockbox { max-width: 420px; }
 .lockbox .section-title { margin: 0 0 8px; }
 .lockbox label, .lockbox .meta-line { text-shadow: 0 0 6px var(--bg), 0 0 3px var(--bg), 0 0 1px var(--bg); }
+.dayexport { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 14px; max-width: 720px; }
+.dayexport .field { margin: 0; }
+.dayexport label { text-shadow: 0 0 6px var(--bg), 0 0 3px var(--bg), 0 0 1px var(--bg); }
+.dayexport input { width: auto; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .empty { padding: 36px 20px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 6px; }
 .empty b { display: block; color: var(--ink); font-family: var(--display); font-size: 24px; text-transform: uppercase; margin-bottom: 4px; letter-spacing: .02em; }
@@ -697,7 +701,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
     renderTally();
 
-    el.innerHTML = '<div class="roster-head"><h2 class="section-title">Players</h2><div class="actions"><button type="button" class="btn ghost" data-export="1">Export all CSV</button><button type="button" class="btn ghost" data-lock="1">Sign out</button></div></div>' +
+    el.innerHTML = '<div class="roster-head"><h2 class="section-title">Players</h2><div class="actions"><button type="button" class="btn ghost" data-export="1">Export all-time CSV</button><button type="button" class="btn ghost" data-export-day="1">Export daily CSV</button><button type="button" class="btn ghost" data-lock="1">Sign out</button></div></div>' + dayPanel() +
       '<ul class="roster">' + items.map(function (p) {
         var n = p.entries.length, open = state.openPlayer === p.id;
         var meta = n ? n + ' response' + (n === 1 ? '' : 's') + ' &middot; last ' + esc(fmtDate(p.entries[0].date, true)) : 'No responses yet';
@@ -716,13 +720,13 @@ import { firebaseConfig } from "./firebase-config.js";
     if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
     return '"' + s.replace(/"/g, '""') + '"';
   }
-  async function doExport(only, label) {
+  async function doExport(only, label, fixedName) {
     var list = (only || allEntries()).slice().sort(function (a, b) { return norm(a.name).localeCompare(norm(b.name)) || newest(a, b); });
     if (!list.length) return showNotice('There are no check-ins to export.', false);
     var head = ['Name', 'Date of throwing', 'Throwing', 'Armored Head pre/post', 'Arm feel', 'Goal and day of week', 'Executed well', 'Treadmill or running time', 'Submitted at'];
     var rows = list.map(function (e) { return [e.name, e.date, e.throwing, e.armor, e.feel, e.goal, e.well, e.run, e.at].map(csvCell).join(','); });
     var csv = head.map(csvCell).join(',') + '\n' + rows.join('\n');
-    var fname = 'throwing-checkins-' + (label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' : '') + todayStr() + '.csv';
+    var fname = fixedName || 'throwing-checkins-' + (label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' : '') + todayStr() + '.csv';
     var blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = fname;
@@ -730,6 +734,15 @@ import { firebaseConfig } from "./firebase-config.js";
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
 
+  function dayPanel() {
+    if (!state.dayExportOpen) return '';
+    var v = state.dayExportDate || currentDay();
+    return '<div class="dayexport"><div class="field"><label for="dayExportDate">Choose a date</label><input type="date" id="dayExportDate" value="' + esc(v) + '"></div>' +
+      '<button type="button" class="btn" data-export-day-go="1">Export</button><button type="button" class="btn ghost" data-export-day-cancel="1">Cancel</button></div>';
+  }
+  $('#results').addEventListener('change', function (ev) {
+    if (ev.target.id === 'dayExportDate') state.dayExportDate = ev.target.value;
+  });
   $('#results').addEventListener('click', async function (ev) {
     var t = ev.target.closest('button'); if (!t) return;
     var d = t.dataset, c = state.coach;
@@ -751,6 +764,19 @@ import { firebaseConfig } from "./firebase-config.js";
       if (state.auth) signOut(state.auth);
       state.coach = { view: 'roster', player: null, entry: null };
       renderCoach(); toTop();
+    } else if (d.exportDay !== undefined) {
+      state.dayExportOpen = !state.dayExportOpen; renderCoach();
+      var di = $('#dayExportDate'); if (di) di.focus();
+    } else if (d.exportDayCancel !== undefined) {
+      state.dayExportOpen = false; renderCoach();
+    } else if (d.exportDayGo !== undefined) {
+      var day = ($('#dayExportDate') || {}).value;
+      if (!day) return showNotice('Choose a date first.', true);
+      state.dayExportDate = day;
+      var dayList = allEntries().filter(function (e) { return e.date === day; });
+      if (!dayList.length) return showNotice('No check-ins have the throw date ' + fmtDate(day, true) + '.', false);
+      showNotice('', false);
+      doExport(dayList, null, 'throwing-checkins-daily-' + day + '.csv');
     } else if (d.export) {
       doExport();
     } else if (d.del) { state.confirm = d.del; renderCoach(); }
