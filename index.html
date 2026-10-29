@@ -202,6 +202,9 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
 .dayexport .field { margin: 0; }
 .dayexport label { text-shadow: 0 0 6px var(--bg), 0 0 3px var(--bg), 0 0 1px var(--bg); }
 .dayexport input { width: auto; }
+.authbar { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; max-width: 720px; margin: 0 0 18px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font-size: 14px; }
+.authbar .who { color: var(--muted); flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.authbar .who b { color: var(--ink); font-weight: 600; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .empty { padding: 36px 20px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 6px; }
 .empty b { display: block; color: var(--ink); font-family: var(--display); font-size: 24px; text-transform: uppercase; margin-bottom: 4px; letter-spacing: .02em; }
@@ -241,6 +244,7 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
   <!-- CHECK IN -->
   <section id="view-checkin">
     <div class="panel" id="formPanel">
+      <div class="authbar" data-authbar></div>
       <form id="checkinForm" novalidate>
         <p class="meta-line"><span class="req">*</span> Every question is required.</p>
         <div class="grid2">
@@ -304,7 +308,7 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
   <!-- MY LOG -->
   <section id="view-mine" hidden>
     <h2 class="section-title">My log</h2>
-    <div class="field narrow"><label for="mineName">Your name</label><select id="mineName"></select></div>
+    <div class="authbar" data-authbar></div>
     <div id="mineList" class="log"></div>
   </section>
 
@@ -323,7 +327,10 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
           <input type="password" id="coachPw" autocomplete="current-password">
         </div>
         <p class="formerr" id="lockErr" role="alert" hidden>That email or password is not right.</p>
-        <button type="submit" class="btn">Unlock</button>
+        <div class="actions">
+          <button type="submit" class="btn">Unlock</button>
+          <button type="button" class="btn ghost" id="coachGoogle">Sign in with Google</button>
+        </div>
       </form>
     </div>
     <div id="coachBody" hidden>
@@ -336,8 +343,8 @@ td.wrapcell { min-width: 150px; overflow-wrap: anywhere; }
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 (function () {
@@ -346,12 +353,16 @@ import { firebaseConfig } from "./firebase-config.js";
   var ROSTER = ['Bajaj', 'Berner', 'Calamari', 'Charatz', 'Wallick', 'Darrell', 'Donlon', 'Levitan', 'Lippe', 'Maryott', 'Mill', 'Nelson', 'Powell', 'Sternberg', 'Roy-Burman', 'Young', 'Sadowski', 'Yeh'];
   var WELL = ['Command', 'Velocity', 'Confidence', 'Conditioning', 'Breathing / Mental Work', 'Mechanical Consistency'];
   var FEEL_CLASS = { 'great': 'ok', 'good': 'ok', 'fine': '', 'healthy soreness': 'warn', 'fatigued': 'crit' };
+  /* coach accounts: keep this list the same as the one in the Firestore rules */
+  var COACHES = ['emello@vassar.edu', 'jlippe@vassar.edu', 'tskelley@vassar.edu'];
+  function isCoach(user) { return !!(user && user.email && COACHES.indexOf(user.email.toLowerCase()) > -1); }
 
   var $ = function (s) { return document.querySelector(s); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 
   var state = {
     db: null, auth: null, isAdmin: false, ready: false,
+    user: null, mine: [], mineLoaded: false, mineErr: '',
     docs: [], tab: 'checkin', view: 'table',
     sort: { key: 'date', dir: 'desc' }, confirm: null, busy: false
   };
@@ -390,6 +401,31 @@ import { firebaseConfig } from "./firebase-config.js";
     if (!msg) { n.hidden = true; return; }
     n.textContent = msg; n.className = 'notice' + (isErr ? ' err' : ''); n.hidden = false;
   }
+  /* ---------- player sign-in (Google) ---------- */
+  function signInMsg(e) {
+    var c = e && e.code;
+    if (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') return 'Sign-in was cancelled. Sign in with Google to save your check-in.';
+    if (c === 'auth/popup-blocked') return 'Your browser blocked the sign-in window. Allow pop-ups for this site and try again.';
+    if (c === 'auth/unauthorized-domain') return 'Sign-in is not set up for this web address yet. Tell your coach.';
+    return 'Could not sign in. Check your connection and try again.';
+  }
+  async function googleSignIn() {
+    var res = await signInWithPopup(state.auth, new GoogleAuthProvider());
+    return res.user;
+  }
+  function renderAuthBars() {
+    var u = state.user, html;
+    if (!state.auth) html = '<span class="who">Sign-in is not available yet.</span>';
+    else if (u) html = '<span class="who">Signed in as <b>' + esc(u.displayName || u.email || 'you') + '</b>' + (u.email && u.displayName ? ' (' + esc(u.email) + ')' : '') + '</span><button type="button" class="btn-sm" data-signout="1">Sign out</button>';
+    else html = '<span class="who">Sign in with Google so your log follows you to any device. You only need to do this once per device.</span><button type="button" class="btn" data-signin="1">Sign in with Google</button>';
+    document.querySelectorAll('[data-authbar]').forEach(function (el) { el.innerHTML = html; });
+  }
+  document.addEventListener('click', async function (ev) {
+    var b = ev.target.closest('[data-signin],[data-signout]'); if (!b || !state.auth) return;
+    if (b.dataset.signout) { signOut(state.auth); return; }
+    try { await googleSignIn(); showNotice('', false); } catch (e) { showNotice(signInMsg(e), true); }
+  });
+
   /* ---------- form setup ---------- */
   function buildChips(group, opts, noOther) {
     $('#chips-' + group).innerHTML = (noOther ? opts : opts.concat(['Other'])).map(function (o) {
@@ -452,18 +488,22 @@ import { firebaseConfig } from "./firebase-config.js";
       return;
     }
     if (!state.db) return formError('The check-in log is not connected yet. Tell your coach.');
+    var user = state.user;
+    if (!user) {
+      try { user = await googleSignIn(); } catch (e) { return formError(signInMsg(e)); }
+    }
     formError('');
     var entry = {
       name: name, date: date,
       throwing: $('#f-throw').value.trim(),
       armor: radioValue('armor'), feel: radioValue('feel'), dayColor: radioValue('dayColor'),
       goal: $('#f-goal').value.trim(), well: radioValue('well'),
-      run: $('#f-run').value.trim(), at: new Date().toISOString()
+      run: $('#f-run').value.trim(), at: new Date().toISOString(),
+      uid: user.uid
     };
     state.busy = true; $('#submitBtn').disabled = true; $('#submitBtn').textContent = 'Saving...';
     try {
       var added = await addDoc(collection(state.db, 'checkins'), entry);
-      rememberLocal(Object.assign({ id: added.id }, entry));
       store('tc-name', name);
       $('#doneMsg').textContent = 'Logged for ' + fmtDate(date) + '. Nice work, ' + name.split(' ')[0] + '.';
       $('#formPanel').hidden = true; $('#donePanel').hidden = false;
@@ -477,18 +517,11 @@ import { firebaseConfig } from "./firebase-config.js";
   });
 
   /* ---------- data ---------- */
-  function localEntries() {
-    try { var a = JSON.parse(localStorage.getItem('tc-local') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
-  }
-  function rememberLocal(e) {
-    var a = localEntries(); a.push(e);
-    try { localStorage.setItem('tc-local', JSON.stringify(a.slice(-300))); } catch (x) {}
-  }
   function allEntries() {
     return state.docs.map(function (e) { return Object.assign({}, e, { uid: 'c', name: e.name || '' }); });
   }
   function myEntries() {
-    return localEntries().map(function (e) { return Object.assign({}, e, { uid: 'c', name: e.name || '' }); })
+    return state.mine.map(function (e) { return Object.assign({}, e, { uid: 'c', name: e.name || '' }); })
       .sort(function (a, b) { return (b.date || '').localeCompare(a.date || '') || (b.at || '').localeCompare(a.at || ''); });
   }
 
@@ -527,24 +560,15 @@ import { firebaseConfig } from "./firebase-config.js";
   state.openPlayer = null;
 
   /* ---------- my log ---------- */
-  var mineSel = $('#mineName');
-  mineSel.innerHTML = '<option value="">Select your name</option>' +
-    ROSTER.map(function (n, i) { return '<option value="' + i + '">' + esc(n) + '</option>'; }).join('') +
-    '<option value="__mine">My name is not listed</option>';
-  (function () {
-    var saved = load('tc-mine');
-    if (!saved) { var i = playerIndexOf(load('tc-name')); if (i > -1) saved = String(i); }
-    if (saved) mineSel.value = saved;
-  })();
-  mineSel.addEventListener('change', function () { store('tc-mine', mineSel.value); renderMine(); });
   function renderMine() {
-    var v = mineSel.value, el = $('#mineList');
-    if (!v) { el.innerHTML = '<div class="empty"><b>Pick your name</b>Choose your name above to see your check-ins, newest first.</div>'; return; }
-    var list = v === '__mine' ? myEntries() : myEntries().filter(function (e) { return playerIndexOf(e.name) === Number(v); });
-    if (!list.length) {
-      el.innerHTML = '<div class="empty"><b>No check-ins yet</b>Nothing is logged under this name on this device. My log shows check-ins submitted from this browser.</div>';
-      return;
-    }
+    var el = $('#mineList');
+    renderAuthBars();
+    if (!state.auth) { el.innerHTML = ''; return; }
+    if (!state.user) { el.innerHTML = '<div class="empty"><b>Sign in to see your log</b>Use the same Google account you check in with. Your check-ins show up on any device, newest first.</div>'; return; }
+    if (state.mineErr) { el.innerHTML = '<div class="empty"><b>Could not load your log</b>' + esc(state.mineErr) + '</div>'; return; }
+    if (!state.mineLoaded) { el.innerHTML = '<div class="empty"><b>Loading</b>Getting your check-ins...</div>'; return; }
+    var list = myEntries();
+    if (!list.length) { el.innerHTML = '<div class="empty"><b>No check-ins yet</b>Check-ins you submit while signed in with this Google account show up here on every device.</div>'; return; }
     el.innerHTML = list.map(function (e) { return entryCard(e); }).join('');
   }
 
@@ -683,11 +707,21 @@ import { firebaseConfig } from "./firebase-config.js";
     var err = $('#lockErr');
     if (!state.auth) { err.textContent = 'The log is not connected yet.'; err.hidden = false; return; }
     try {
-      await signInWithEmailAndPassword(state.auth, $('#coachEmail').value.trim(), $('#coachPw').value);
+      var cred = await signInWithEmailAndPassword(state.auth, $('#coachEmail').value.trim(), $('#coachPw').value);
       $('#coachPw').value = ''; err.hidden = true;
+      if (!isCoach(cred.user)) { await signOut(state.auth); err.textContent = 'That account is not on the coach list.'; err.hidden = false; }
     } catch (e) {
       err.textContent = 'That email or password is not right.'; err.hidden = false; $('#coachPw').select();
     }
+  });
+  $('#coachGoogle').addEventListener('click', async function () {
+    var err = $('#lockErr');
+    if (!state.auth) { err.textContent = 'The log is not connected yet.'; err.hidden = false; return; }
+    try {
+      var u = await googleSignIn();
+      if (isCoach(u)) err.hidden = true;
+      else { err.textContent = 'That Google account (' + (u.email || 'unknown') + ') is not on the coach list.'; err.hidden = false; }
+    } catch (e) { err.textContent = signInMsg(e); err.hidden = false; }
   });
   function panelHtml(p) {
     var n = p.entries.length, id = esc(p.id), head = '<div class="rp-panel" id="rp-panel-' + id + '">';
@@ -840,12 +874,13 @@ import { firebaseConfig } from "./firebase-config.js";
   window.addEventListener('hashchange', function () { setTab((location.hash || '').slice(1)); });
 
   function refresh() {
+    renderAuthBars();
     if (state.tab === 'mine') renderMine();
     if (state.tab === 'coach') { renderCoach(); }
   }
 
   /* ---------- connect to Firebase ---------- */
-  var unsub = null;
+  var unsub = null, unsubMine = null;
   (function init() {
     setTab((location.hash || '').slice(1));
     try {
@@ -859,14 +894,26 @@ import { firebaseConfig } from "./firebase-config.js";
     }
     onAuthStateChanged(state.auth, function (user) {
       if (unsub) { unsub(); unsub = null; }
-      state.docs = [];
-      state.coachOk = !!user; state.isAdmin = !!user;
-      if (user) {
+      if (unsubMine) { unsubMine(); unsubMine = null; }
+      state.user = user || null;
+      state.docs = []; state.mine = []; state.mineLoaded = false; state.mineErr = '';
+      state.coachOk = isCoach(user); state.isAdmin = state.coachOk;
+      if (state.coachOk) {
         unsub = onSnapshot(collection(state.db, 'checkins'), function (snap) {
           state.docs = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
           refresh();
+        }, function () {
+          showNotice('Could not load the coach view. Check that the Firestore rules list this coach email.', true);
+        });
+      }
+      if (user) {
+        unsubMine = onSnapshot(query(collection(state.db, 'checkins'), where('uid', '==', user.uid)), function (snap) {
+          state.mine = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+          state.mineLoaded = true; state.mineErr = '';
+          refresh();
         }, function (err) {
-          if (err && err.code === 'permission-denied') showNotice('This account is not the coach account. Sign out and use the coach email.', true);
+          state.mineErr = err && err.code === 'permission-denied' ? 'The database rules blocked this. Tell your coach.' : 'Check your connection and try again.';
+          refresh();
         });
       }
       refresh();
